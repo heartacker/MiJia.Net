@@ -462,6 +462,18 @@ public sealed class MiAuthService : IMiAuthService
         catch
         {
         }
+
+        try
+        {
+            string ledgerPath = GetAccountsLedgerPath();
+            if (File.Exists(ledgerPath))
+            {
+                File.Delete(ledgerPath);
+            }
+        }
+        catch
+        {
+        }
     }
 
     private static string CleanJsonPrefix(string raw)
