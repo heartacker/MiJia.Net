@@ -14,6 +14,7 @@ namespace MiJia.Net.Serialization;
     PropertyNamingPolicy = JsonKnownNamingPolicy.Unspecified,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(MiAuthTokens))]
+[JsonSerializable(typeof(List<MiAuthTokens>))]
 [JsonSerializable(typeof(DeviceInfo))]
 [JsonSerializable(typeof(List<DeviceInfo>))]
 [JsonSerializable(typeof(HomeInfo))]

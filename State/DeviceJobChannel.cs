@@ -69,6 +69,11 @@ public sealed class DeviceJobChannel : IDeviceJobChannel
 
                 // 取出当前可读的所有项进行防抖合并
                 buffer.Clear();
+                if (_channel.Reader.TryRead(out var firstItem))
+                {
+                    buffer.Add(firstItem);
+                }
+
                 while (_channel.Reader.TryRead(out var item))
                 {
                     buffer.Add(item);

@@ -82,8 +82,11 @@ public sealed class MiotPropSetResult
     [JsonPropertyName("message")]
     public string? Message { get; set; }
 
+    /// <summary>
+    /// 设置属性是否成功：在 MIoT 规范中，0 为 OK，1 为成功/正在执行
+    /// </summary>
     [JsonIgnore]
-    public bool IsSuccess => Code == 0;
+    public bool IsSuccess => Code == 0 || Code == 1;
 }
 
 /// <summary>

@@ -29,6 +29,21 @@ public interface IMiAuthService
     /// 保存认证凭据到本地
     /// </summary>
     Task SaveTokensAsync(MiAuthTokens tokens, string? customPath = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 清除本地存储的认证凭据（退出登录）
+    /// </summary>
+    void ClearSavedTokens(string? customPath = null);
+
+    /// <summary>
+    /// 获取本地已保存的所有历史登录账号
+    /// </summary>
+    Task<List<MiAuthTokens>> GetSavedAccountsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 移除指定用户ID的账号记录
+    /// </summary>
+    Task RemoveAccountAsync(string userId, CancellationToken cancellationToken = default);
 }
 
 public sealed class MiAuthService : IMiAuthService
@@ -353,6 +368,13 @@ public sealed class MiAuthService : IMiAuthService
         }
     }
 
+    private static string GetAccountsLedgerPath()
+    {
+        string userHome = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        string configDir = Path.Combine(userHome, ".config", "mijia-api");
+        return Path.Combine(configDir, "auth_accounts.json");
+    }
+
     /// <inheritdoc />
     public async Task SaveTokensAsync(MiAuthTokens tokens, string? customPath = null, CancellationToken cancellationToken = default)
     {
@@ -365,6 +387,81 @@ public sealed class MiAuthService : IMiAuthService
 
         string json = JsonSerializer.Serialize(tokens, MiJiaJsonContext.Default.MiAuthTokens);
         await File.WriteAllTextAsync(path, json, cancellationToken).ConfigureAwait(false);
+
+        // 同步追加或更新到多账号存储列表
+        try
+        {
+            var accounts = await GetSavedAccountsAsync(cancellationToken).ConfigureAwait(false);
+            accounts.RemoveAll(a => a.UserId == tokens.UserId);
+            accounts.Insert(0, tokens);
+
+            string ledgerPath = GetAccountsLedgerPath();
+            string ledgerJson = JsonSerializer.Serialize(accounts, MiJiaJsonContext.Default.ListMiAuthTokens);
+            await File.WriteAllTextAsync(ledgerPath, ledgerJson, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<List<MiAuthTokens>> GetSavedAccountsAsync(CancellationToken cancellationToken = default)
+    {
+        string ledgerPath = GetAccountsLedgerPath();
+        if (!File.Exists(ledgerPath))
+        {
+            // 若 auth_accounts.json 不存在但 auth.json 存在，做一次自动迁移
+            var current = await LoadSavedTokensAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (current != null && current.IsValid)
+            {
+                return [current];
+            }
+            return [];
+        }
+
+        try
+        {
+            string json = await File.ReadAllTextAsync(ledgerPath, cancellationToken).ConfigureAwait(false);
+            var list = JsonSerializer.Deserialize(json, MiJiaJsonContext.Default.ListMiAuthTokens);
+            return list?.Where(x => x.IsValid).ToList() ?? [];
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task RemoveAccountAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var accounts = await GetSavedAccountsAsync(cancellationToken).ConfigureAwait(false);
+            accounts.RemoveAll(a => a.UserId == userId);
+
+            string ledgerPath = GetAccountsLedgerPath();
+            string ledgerJson = JsonSerializer.Serialize(accounts, MiJiaJsonContext.Default.ListMiAuthTokens);
+            await File.WriteAllTextAsync(ledgerPath, ledgerJson, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+        }
+    }
+
+    /// <inheritdoc />
+    public void ClearSavedTokens(string? customPath = null)
+    {
+        string path = customPath ?? GetDefaultAuthPath();
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch
+        {
+        }
     }
 
     private static string CleanJsonPrefix(string raw)
