@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+
+    <!-- NuGet Package 元数据配置 -->
+    <PackageId>MiJia.Net</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>MiHAva</Authors>
+    <Company>MiHAva</Company>
+    <Description>High-performance, cross-platform C# client SDK for Xiaomi MiHome (米家) cloud API, with QR code auth, HMAC signing, MIoT-Spec parsing, debounce channels, and anti-rebound state coordination.</Description>
+    <PackageTags>xiaomi;mihome;mijia;iot;miot;smarthome;avalonia;csharp</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/MiHAva/MiJia.Net</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/MiHAva/MiJia.Net</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+
+    <!-- 零反射 & AOT 友好 -->
+    <IsTrimmable>true</IsTrimmable>
+  </PropertyGroup>
+
+</Project>

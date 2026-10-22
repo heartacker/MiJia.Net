@@ -1,0 +1,23 @@
+## Build results
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+## Visual Studio / Rider / VSCode
+.vs/
+.idea/
+.vscode/
+*.user
+*.userosscache
+*.sln.docstates
+*.suo
+
+## OS generated
+.DS_Store
+Thumbs.db
+ehthumbs.db
+
+## NuGet packages
+*.nupkg
+*.snupkg
