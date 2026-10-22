@@ -1,11 +1,11 @@
 using System.Net;
-using System.Net.Http.Headers;
-using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using MiJia.Net.Models.Auth;
 using MiJia.Net.Models.Devices;
+using MiJia.Net.Models.Requests;
 using MiJia.Net.Security;
+using MiJia.Net.Serialization;
 
 namespace MiJia.Net.Cloud;
 
@@ -73,7 +73,7 @@ public sealed class MiCloudClient : IMiCloudClient
         {
             var handler = new SocketsHttpHandler
             {
-                UseCookies = false, // 我们手工在 Header 中严格控制 Cookie
+                UseCookies = false, // 手工严格在 Header 中控制 Cookie
                 AutomaticDecompression = DecompressionMethods.All
             };
             _http = new HttpClient(handler);
@@ -86,8 +86,8 @@ public sealed class MiCloudClient : IMiCloudClient
     /// <inheritdoc />
     public async Task<List<HomeInfo>> GetHomesAsync(CancellationToken cancellationToken = default)
     {
-        var dataObj = new { fg = false, fetch_share = true };
-        string dataJson = JsonSerializer.Serialize(dataObj);
+        var reqObj = new GetHomesRequest { Fg = false, FetchShare = true };
+        string dataJson = JsonSerializer.Serialize(reqObj, MiJiaJsonContext.Default.GetHomesRequest);
 
         var responseNode = await PostAsync("/homeroom/gethome", dataJson, cancellationToken).ConfigureAwait(false);
         var resultNode = responseNode?["result"];
@@ -100,7 +100,7 @@ public sealed class MiCloudClient : IMiCloudClient
         foreach (var item in homelist)
         {
             if (item == null) continue;
-            var home = JsonSerializer.Deserialize<HomeInfo>(item.ToJsonString());
+            var home = JsonSerializer.Deserialize(item.ToJsonString(), MiJiaJsonContext.Default.HomeInfo);
             if (home != null)
             {
                 list.Add(home);
@@ -115,14 +115,14 @@ public sealed class MiCloudClient : IMiCloudClient
         bool getHuamiDevices = true,
         CancellationToken cancellationToken = default)
     {
-        var dataObj = new
+        var reqObj = new GetDevicesRequest
         {
-            getVirtualModel,
-            getHuamiDevices = getHuamiDevices ? 1 : 0,
-            get_split_device = true,
-            support_all_spec = true
+            GetVirtualModel = getVirtualModel,
+            GetHuamiDevices = getHuamiDevices ? 1 : 0,
+            GetSplitDevice = true,
+            SupportAllSpec = true
         };
-        string dataJson = JsonSerializer.Serialize(dataObj);
+        string dataJson = JsonSerializer.Serialize(reqObj, MiJiaJsonContext.Default.GetDevicesRequest);
 
         var responseNode = await PostAsync("/home/device_list", dataJson, cancellationToken).ConfigureAwait(false);
         var resultNode = responseNode?["result"];
@@ -135,7 +135,7 @@ public sealed class MiCloudClient : IMiCloudClient
         foreach (var item in deviceListArray)
         {
             if (item == null) continue;
-            var dev = JsonSerializer.Deserialize<DeviceInfo>(item.ToJsonString());
+            var dev = JsonSerializer.Deserialize(item.ToJsonString(), MiJiaJsonContext.Default.DeviceInfo);
             if (dev != null)
             {
                 list.Add(dev);
@@ -152,8 +152,8 @@ public sealed class MiCloudClient : IMiCloudClient
         var targetList = targets.ToList();
         if (targetList.Count == 0) return [];
 
-        var dataObj = new { @params = targetList };
-        string dataJson = JsonSerializer.Serialize(dataObj);
+        var reqObj = new PropBatchGetRequest { Params = targetList };
+        string dataJson = JsonSerializer.Serialize(reqObj, MiJiaJsonContext.Default.PropBatchGetRequest);
 
         var responseNode = await PostAsync("/miotspec/prop/get", dataJson, cancellationToken).ConfigureAwait(false);
         var resultNode = responseNode?["result"]?.AsArray();
@@ -163,7 +163,7 @@ public sealed class MiCloudClient : IMiCloudClient
         foreach (var item in resultNode)
         {
             if (item == null) continue;
-            var propRes = JsonSerializer.Deserialize<MiotPropGetResult>(item.ToJsonString());
+            var propRes = JsonSerializer.Deserialize(item.ToJsonString(), MiJiaJsonContext.Default.MiotPropGetResult);
             if (propRes != null)
             {
                 list.Add(propRes);
@@ -180,8 +180,8 @@ public sealed class MiCloudClient : IMiCloudClient
         var targetList = targets.ToList();
         if (targetList.Count == 0) return [];
 
-        var dataObj = new { @params = targetList };
-        string dataJson = JsonSerializer.Serialize(dataObj);
+        var reqObj = new PropBatchSetRequest { Params = targetList };
+        string dataJson = JsonSerializer.Serialize(reqObj, MiJiaJsonContext.Default.PropBatchSetRequest);
 
         var responseNode = await PostAsync("/miotspec/prop/set", dataJson, cancellationToken).ConfigureAwait(false);
         var resultNode = responseNode?["result"]?.AsArray();
@@ -191,7 +191,7 @@ public sealed class MiCloudClient : IMiCloudClient
         foreach (var item in resultNode)
         {
             if (item == null) continue;
-            var propRes = JsonSerializer.Deserialize<MiotPropSetResult>(item.ToJsonString());
+            var propRes = JsonSerializer.Deserialize(item.ToJsonString(), MiJiaJsonContext.Default.MiotPropSetResult);
             if (propRes != null)
             {
                 list.Add(propRes);
@@ -205,14 +205,14 @@ public sealed class MiCloudClient : IMiCloudClient
         MiotActionTarget target,
         CancellationToken cancellationToken = default)
     {
-        var dataObj = new { @params = target };
-        string dataJson = JsonSerializer.Serialize(dataObj);
+        var reqObj = new ActionRequest { Params = target };
+        string dataJson = JsonSerializer.Serialize(reqObj, MiJiaJsonContext.Default.ActionRequest);
 
         var responseNode = await PostAsync("/miotspec/action", dataJson, cancellationToken).ConfigureAwait(false);
         var resultNode = responseNode?["result"];
         if (resultNode != null)
         {
-            var res = JsonSerializer.Deserialize<MiotActionResult>(resultNode.ToJsonString());
+            var res = JsonSerializer.Deserialize(resultNode.ToJsonString(), MiJiaJsonContext.Default.MiotActionResult);
             if (res != null) return res;
         }
 

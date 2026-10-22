@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using MiJia.Net.Models.Auth;
+using MiJia.Net.Serialization;
 
 namespace MiJia.Net.Auth;
 
@@ -248,7 +249,7 @@ public sealed class MiAuthService : IMiAuthService
         try
         {
             string json = await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
-            var tokens = JsonSerializer.Deserialize<MiAuthTokens>(json);
+            var tokens = JsonSerializer.Deserialize(json, MiJiaJsonContext.Default.MiAuthTokens);
             return (tokens != null && tokens.IsValid) ? tokens : null;
         }
         catch
@@ -267,8 +268,7 @@ public sealed class MiAuthService : IMiAuthService
             Directory.CreateDirectory(dir);
         }
 
-        var options = new JsonSerializerOptions { WriteIndented = true };
-        string json = JsonSerializer.Serialize(tokens, options);
+        string json = JsonSerializer.Serialize(tokens, MiJiaJsonContext.Default.MiAuthTokens);
         await File.WriteAllTextAsync(path, json, cancellationToken).ConfigureAwait(false);
     }
 

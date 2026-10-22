@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using MiJia.Net.Models.Spec;
+using MiJia.Net.Serialization;
 
 namespace MiJia.Net.Spec;
 
@@ -51,7 +52,7 @@ public sealed class MiotSpecClient : IMiotSpecClient
             try
             {
                 string json = await File.ReadAllTextAsync(diskPath, cancellationToken).ConfigureAwait(false);
-                var spec = JsonSerializer.Deserialize<MiotSpecInstance>(json);
+                var spec = JsonSerializer.Deserialize(json, MiJiaJsonContext.Default.MiotSpecInstance);
                 if (spec != null)
                 {
                     _memoryCache[urn] = spec;
@@ -73,7 +74,7 @@ public sealed class MiotSpecClient : IMiotSpecClient
         }
 
         string rawJson = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        var instance = JsonSerializer.Deserialize<MiotSpecInstance>(rawJson);
+        var instance = JsonSerializer.Deserialize(rawJson, MiJiaJsonContext.Default.MiotSpecInstance);
         if (instance != null)
         {
             _memoryCache[urn] = instance;
