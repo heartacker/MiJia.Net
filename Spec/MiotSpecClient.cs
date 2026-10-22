@@ -12,13 +12,22 @@ public interface IMiotSpecClient
     /// </summary>
     /// <param name="urn">如 urn:miot-spec-v2:device:switch:0000A003:cuco-cp1:1</param>
     Task<MiotSpecInstance?> GetSpecInstanceAsync(string urn, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 根据设备 model 获取规格定义（优先通过实例库解析 model -> urn）
+    /// </summary>
+    Task<MiotSpecInstance?> GetSpecByModelAsync(string model, CancellationToken cancellationToken = default);
 }
 
 public sealed class MiotSpecClient : IMiotSpecClient
 {
     private readonly HttpClient _http;
     private readonly string _cacheDir;
+    private readonly string _instancesIndexPath;
     private readonly ConcurrentDictionary<string, MiotSpecInstance> _memoryCache = new();
+    private readonly ConcurrentDictionary<string, string> _modelToUrnMap = new(StringComparer.OrdinalIgnoreCase);
+    private bool _indexLoaded = false;
+    private readonly SemaphoreSlim _indexLock = new(1, 1);
 
     public MiotSpecClient(HttpClient? httpClient = null, string? cacheDir = null)
     {
@@ -26,11 +35,91 @@ public sealed class MiotSpecClient : IMiotSpecClient
         
         string userHome = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         _cacheDir = cacheDir ?? Path.Combine(userHome, ".config", "mijia-api", "spec_cache");
+        _instancesIndexPath = Path.Combine(userHome, ".config", "mijia-api", "instances_all.json");
         
         if (!Directory.Exists(_cacheDir))
         {
             Directory.CreateDirectory(_cacheDir);
         }
+    }
+
+    private async Task EnsureIndexLoadedAsync(CancellationToken cancellationToken)
+    {
+        if (_indexLoaded) return;
+        await _indexLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (_indexLoaded) return;
+
+            string? json = null;
+            if (File.Exists(_instancesIndexPath))
+            {
+                try
+                {
+                    json = await File.ReadAllTextAsync(_instancesIndexPath, cancellationToken).ConfigureAwait(false);
+                }
+                catch
+                {
+                }
+            }
+
+            if (string.IsNullOrEmpty(json))
+            {
+                try
+                {
+                    using var resp = await _http.GetAsync("https://miot-spec.org/miot-spec-v2/instances?status=all", cancellationToken).ConfigureAwait(false);
+                    if (resp.IsSuccessStatusCode)
+                    {
+                        json = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                        _ = File.WriteAllTextAsync(_instancesIndexPath, json, cancellationToken);
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            if (!string.IsNullOrEmpty(json))
+            {
+                using var doc = JsonDocument.Parse(json);
+                if (doc.RootElement.TryGetProperty("instances", out var instArr) && instArr.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var elem in instArr.EnumerateArray())
+                    {
+                        if (elem.TryGetProperty("model", out var mProp) && elem.TryGetProperty("type", out var tProp))
+                        {
+                            string? model = mProp.GetString();
+                            string? type = tProp.GetString();
+                            if (!string.IsNullOrEmpty(model) && !string.IsNullOrEmpty(type))
+                            {
+                                // 优先记录已发布或版本较高的
+                                _modelToUrnMap[model] = type;
+                            }
+                        }
+                    }
+                }
+            }
+
+            _indexLoaded = true;
+        }
+        finally
+        {
+            _indexLock.Release();
+        }
+    }
+
+    public async Task<MiotSpecInstance?> GetSpecByModelAsync(string model, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(model)) return null;
+
+        await EnsureIndexLoadedAsync(cancellationToken).ConfigureAwait(false);
+
+        if (_modelToUrnMap.TryGetValue(model, out var urn))
+        {
+            return await GetSpecInstanceAsync(urn, cancellationToken).ConfigureAwait(false);
+        }
+
+        return null;
     }
 
     public async Task<MiotSpecInstance?> GetSpecInstanceAsync(string urn, CancellationToken cancellationToken = default)
