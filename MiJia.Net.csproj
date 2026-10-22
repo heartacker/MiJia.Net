@@ -17,6 +17,7 @@
     <PackageProjectUrl>https://github.com/MiHAva/MiJia.Net</PackageProjectUrl>
     <RepositoryUrl>https://github.com/MiHAva/MiJia.Net</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
@@ -25,6 +26,11 @@
 
     <!-- 零反射 & AOT 友好 -->
     <IsTrimmable>true</IsTrimmable>
+    <NoWarn>$(NoWarn);CS1591;CS1570;CS1573;IL2026</NoWarn>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
 </Project>
