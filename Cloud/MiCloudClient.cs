@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 using MiJia.Net.Models.Auth;
 using MiJia.Net.Models.Devices;
 using MiJia.Net.Models.Requests;
+using MiJia.Net.Models.Scenes;
 using MiJia.Net.Security;
 using MiJia.Net.Serialization;
 
@@ -40,6 +41,16 @@ public interface IMiCloudClient
     /// 执行设备 Action 动作 (MIoT Spec)
     /// </summary>
     Task<MiotActionResult> RunActionAsync(MiotActionTarget target, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 获取用户的手动场景列表；homeId 为空时返回全部家庭的场景
+    /// </summary>
+    Task<List<SceneInfo>> GetScenesAsync(string? homeId = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 执行米家手动场景
+    /// </summary>
+    Task<bool> RunSceneAsync(string sceneId, string? homeId = null, CancellationToken cancellationToken = default);
 }
 
 public sealed class MiCloudClient : IMiCloudClient
@@ -223,6 +234,100 @@ public sealed class MiCloudClient : IMiCloudClient
             Aiid = target.Aiid,
             Code = responseNode?["code"]?.GetValue<int>() ?? -1
         };
+    }
+
+    /// <inheritdoc />
+    public async Task<List<SceneInfo>> GetScenesAsync(string? homeId = null, CancellationToken cancellationToken = default)
+    {
+        var homes = await GetHomesAsync(cancellationToken).ConfigureAwait(false);
+        var targetHomes = string.IsNullOrEmpty(homeId) 
+            ? homes 
+            : homes.Where(h => h.Id == homeId).ToList();
+
+        if (targetHomes.Count == 0 && !string.IsNullOrEmpty(homeId))
+        {
+            // 若用户指定了 homeId 但本地未查到，构造一个临时 entry 尝试直接请求
+            long defaultUid = long.TryParse(_tokens.UserId, out var uid) ? uid : 0;
+            targetHomes = [new HomeInfo { Id = homeId, Name = "Home", Uid = defaultUid }];
+        }
+
+        var allScenes = new List<SceneInfo>();
+        foreach (var home in targetHomes)
+        {
+            long ownerUid = home.Uid != 0 ? home.Uid : (long.TryParse(_tokens.UserId, out var uid) ? uid : 0);
+            var reqData = new JsonObject
+            {
+                ["app_version"] = 12,
+                ["get_type"] = 2,
+                ["home_id"] = home.Id,
+                ["owner_uid"] = ownerUid
+            };
+
+            try
+            {
+                var respNode = await PostAsync(
+                    "/appgateway/miot/appsceneservice/AppSceneService/GetSimpleSceneList",
+                    reqData.ToJsonString(),
+                    cancellationToken).ConfigureAwait(false);
+
+                var resultNode = respNode?["result"] ?? respNode;
+                var manualList = resultNode?["manual_scene_info_list"]?.AsArray();
+                if (manualList != null)
+                {
+                    foreach (var item in manualList)
+                    {
+                        if (item == null) continue;
+                        var scene = JsonSerializer.Deserialize(item.ToJsonString(), MiJiaJsonContext.Default.SceneInfo);
+                        if (scene != null)
+                        {
+                            if (string.IsNullOrEmpty(scene.HomeId)) scene.HomeId = home.Id;
+                            if (string.IsNullOrEmpty(scene.HomeName)) scene.HomeName = home.Name;
+                            allScenes.Add(scene);
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // 忽略单个家庭获取失败，继续收集其他家庭场景
+            }
+        }
+
+        return allScenes;
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> RunSceneAsync(string sceneId, string? homeId = null, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(sceneId)) throw new ArgumentException("Scene ID cannot be empty", nameof(sceneId));
+
+        var homes = await GetHomesAsync(cancellationToken).ConfigureAwait(false);
+        var targetHome = !string.IsNullOrEmpty(homeId) 
+            ? homes.FirstOrDefault(h => h.Id == homeId) 
+            : homes.FirstOrDefault();
+
+        string targetHomeId = targetHome?.Id ?? (homeId ?? string.Empty);
+        long ownerUid = (targetHome?.Uid ?? 0) != 0 
+            ? targetHome!.Uid 
+            : (long.TryParse(_tokens.UserId, out var uid) ? uid : 0);
+
+        var runReq = new RunSceneRequest
+        {
+            SceneId = sceneId,
+            SceneType = 2,
+            PhoneId = "null",
+            HomeId = targetHomeId,
+            OwnerUid = ownerUid
+        };
+
+        string reqJson = JsonSerializer.Serialize(runReq, MiJiaJsonContext.Default.RunSceneRequest);
+        var respNode = await PostAsync(
+            "/appgateway/miot/appsceneservice/AppSceneService/NewRunScene",
+            reqJson,
+            cancellationToken).ConfigureAwait(false);
+
+        int code = respNode?["code"]?.GetValue<int>() ?? -1;
+        return code == 0;
     }
 
     /// <summary>

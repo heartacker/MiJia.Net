@@ -2,6 +2,7 @@ using System.Text.Json.Serialization;
 using MiJia.Net.Models.Auth;
 using MiJia.Net.Models.Devices;
 using MiJia.Net.Models.Requests;
+using MiJia.Net.Models.Scenes;
 using MiJia.Net.Models.Spec;
 
 namespace MiJia.Net.Serialization;
@@ -36,6 +37,10 @@ namespace MiJia.Net.Serialization;
 [JsonSerializable(typeof(PropBatchGetRequest))]
 [JsonSerializable(typeof(PropBatchSetRequest))]
 [JsonSerializable(typeof(ActionRequest))]
+[JsonSerializable(typeof(SceneInfo))]
+[JsonSerializable(typeof(List<SceneInfo>))]
+[JsonSerializable(typeof(SimpleSceneListResponse))]
+[JsonSerializable(typeof(RunSceneRequest))]
 public partial class MiJiaJsonContext : JsonSerializerContext
 {
 }

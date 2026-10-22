@@ -10,6 +10,20 @@ public sealed class MiotSpecInstance
     [JsonPropertyName("type")]
     public string Type { get; set; } = string.Empty;
 
+    /// <summary>
+    /// 短标识名（例如 urn:miot-spec-v2:service:light:00007802:yeelink-v1:1 解析为 "light"）
+    /// </summary>
+    [JsonIgnore]
+    public string Name
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(Type)) return string.Empty;
+            var parts = Type.Split(':');
+            return parts.Length >= 4 ? parts[3] : string.Empty;
+        }
+    }
+
     [JsonPropertyName("description")]
     public string Description { get; set; } = string.Empty;
 
@@ -27,6 +41,20 @@ public sealed class MiotSpecService
 
     [JsonPropertyName("type")]
     public string Type { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 短标识名（例如 urn:miot-spec-v2:service:light:00007802:yeelink-v1:1 解析为 "light"）
+    /// </summary>
+    [JsonIgnore]
+    public string Name
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(Type)) return string.Empty;
+            var parts = Type.Split(':');
+            return parts.Length >= 4 ? parts[3] : string.Empty;
+        }
+    }
 
     [JsonPropertyName("description")]
     public string Description { get; set; } = string.Empty;
@@ -48,6 +76,20 @@ public sealed class MiotSpecProperty
 
     [JsonPropertyName("type")]
     public string Type { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 短标识名（例如 urn:miot-spec-v2:service:light:00007802:yeelink-v1:1 解析为 "light"）
+    /// </summary>
+    [JsonIgnore]
+    public string Name
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(Type)) return string.Empty;
+            var parts = Type.Split(':');
+            return parts.Length >= 4 ? parts[3] : string.Empty;
+        }
+    }
 
     [JsonPropertyName("description")]
     public string Description { get; set; } = string.Empty;
@@ -114,6 +156,20 @@ public sealed class MiotSpecAction
 
     [JsonPropertyName("type")]
     public string Type { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 短标识名（例如 urn:miot-spec-v2:service:light:00007802:yeelink-v1:1 解析为 "light"）
+    /// </summary>
+    [JsonIgnore]
+    public string Name
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(Type)) return string.Empty;
+            var parts = Type.Split(':');
+            return parts.Length >= 4 ? parts[3] : string.Empty;
+        }
+    }
 
     [JsonPropertyName("description")]
     public string Description { get; set; } = string.Empty;
