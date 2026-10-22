@@ -49,6 +49,11 @@ public sealed class LoginQrCodeResult
     public required string QrContent { get; set; }
 
     /// <summary>
+    /// 二维码原始图片字节（可选，直接显示官方渲染图片）
+    /// </summary>
+    public byte[]? QrBytes { get; set; }
+
+    /// <summary>
     /// 扫码状态长轮询请求地址
     /// </summary>
     public required string CheckUrl { get; set; }
