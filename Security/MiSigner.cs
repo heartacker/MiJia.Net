@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -12,14 +13,10 @@ public static class MiSigner
 
     /// <summary>
     /// 生成符合米家协议规范的 Nonce
-    /// 规则：12 字节随机数 Base64 字符串 + ":" + (当前毫秒时间戳 / 60000)
+    /// 结构：8字节随机数 + 大端序可变长字节(毫秒时间戳 / 60000)，随后 Base64
     /// </summary>
     public static string GenerateNonce(long? serverTimeDiffMs = null)
     {
-        byte[] randomBytes = new byte[12];
-        Rng.GetBytes(randomBytes);
-        string randBase64 = Convert.ToBase64String(randomBytes);
-
         long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         if (serverTimeDiffMs.HasValue)
         {
@@ -27,7 +24,27 @@ public static class MiSigner
         }
 
         long timeMinute = nowMs / 60000;
-        return $"{randBase64}:{timeMinute}";
+
+        // 计算 timeMinute 所需最少字节数 (Big-Endian)
+        int timeBytesLen = 0;
+        long temp = timeMinute;
+        while (temp > 0)
+        {
+            timeBytesLen++;
+            temp >>= 8;
+        }
+        if (timeBytesLen == 0) timeBytesLen = 1;
+
+        byte[] buffer = new byte[8 + timeBytesLen];
+        Rng.GetBytes(buffer, 0, 8);
+
+        for (int i = 0; i < timeBytesLen; i++)
+        {
+            buffer[8 + timeBytesLen - 1 - i] = (byte)(timeMinute & 0xFF);
+            timeMinute >>= 8;
+        }
+
+        return Convert.ToBase64String(buffer);
     }
 
     /// <summary>
@@ -37,7 +54,7 @@ public static class MiSigner
     public static string GenerateSignedNonce(string ssecurity, string nonce)
     {
         byte[] ssecurityBytes = Convert.FromBase64String(ssecurity);
-        byte[] nonceBytes = Encoding.UTF8.GetBytes(nonce);
+        byte[] nonceBytes = Convert.FromBase64String(nonce);
 
         byte[] buffer = new byte[ssecurityBytes.Length + nonceBytes.Length];
         Buffer.BlockCopy(ssecurityBytes, 0, buffer, 0, ssecurityBytes.Length);
@@ -48,16 +65,33 @@ public static class MiSigner
     }
 
     /// <summary>
-    /// 计算米家 API 请求的 signature
+    /// 计算米家 RC4 加密接口的 SHA1 签名
+    /// 签名格式：METHOD & URI & param1=val1 & ... & signedNonce
+    /// </summary>
+    public static string GenerateEncSignature(string path, string method, string signedNonce, IEnumerable<KeyValuePair<string, string>> parameters)
+    {
+        var sb = new StringBuilder();
+        sb.Append(method.ToUpperInvariant()).Append('&');
+        sb.Append(path);
+
+        foreach (var kvp in parameters)
+        {
+            sb.Append('&').Append(kvp.Key).Append('=').Append(kvp.Value);
+        }
+
+        sb.Append('&').Append(signedNonce);
+
+        byte[] data = Encoding.UTF8.GetBytes(sb.ToString());
+        byte[] hash = SHA1.HashData(data);
+        return Convert.ToBase64String(hash);
+    }
+
+    /// <summary>
+    /// 计算普通米家 API 请求的 signature (HMAC-SHA256)
     /// signature = Base64(HMAC-SHA256(Base64Decode(signed_nonce), $"{path}&{signed_nonce}&{nonce}&data={data}"))
     /// </summary>
-    /// <param name="path">请求相对路径，如 "/app/home/device_list"</param>
-    /// <param name="signedNonce">派生 signed_nonce</param>
-    /// <param name="nonce">请求随机 nonce</param>
-    /// <param name="data">表单或请求体中的 data 字段字符串</param>
     public static string GenerateSignature(string path, string signedNonce, string nonce, string? data)
     {
-        // 签名串格式：URI & signedNonce & nonce [& data=...]
         var sb = new StringBuilder();
         sb.Append(path).Append('&').Append(signedNonce).Append('&').Append(nonce);
 

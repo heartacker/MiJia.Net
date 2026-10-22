@@ -80,7 +80,7 @@ public sealed class MiCloudClient : IMiCloudClient
         }
 
         _http.DefaultRequestHeaders.UserAgent.ParseAdd(
-            "Android-7.1.1-1.0.0-ONEPLUS A3010-136-1.0.0 APP/xiaomi.smarthome APPV/62830");
+            "Android-7.1.1-1.0.0-ONEPLUS A3010-136-ABCDEFGHIJKLM APP/xiaomi.smarthome APPV/62830");
     }
 
     /// <inheritdoc />
@@ -226,36 +226,58 @@ public sealed class MiCloudClient : IMiCloudClient
     }
 
     /// <summary>
-    /// 底层签名与 HTTP POST 执行
+    /// 底层签名与 HTTP POST 执行（通过 MIOT-ENCRYPT-ALGORITHM: ENCRYPT-RC4 双向加解密通信）
     /// </summary>
     private async Task<JsonNode?> PostAsync(string relativePath, string dataJson, CancellationToken cancellationToken)
     {
         string fullUri = _serverBaseUrl + relativePath;
         string nonce = MiSigner.GenerateNonce();
         string signedNonce = MiSigner.GenerateSignedNonce(_tokens.Ssecurity, nonce);
-        string signature = MiSigner.GenerateSignature(relativePath, signedNonce, nonce, dataJson);
+
+        // 构造要加密与签名的表单键值对
+        var rawParams = new Dictionary<string, string>
+        {
+            { "data", dataJson }
+        };
+
+        // 1. 生成 rc4_hash__
+        string rc4Hash = MiSigner.GenerateEncSignature(relativePath, "POST", signedNonce, rawParams);
+        rawParams["rc4_hash__"] = rc4Hash;
+
+        // 2. 将 parameters 的每个值用 RC4-drop1024 进行加密并转 Base64
+        var encryptedParams = new Dictionary<string, string>();
+        foreach (var kvp in rawParams)
+        {
+            encryptedParams[kvp.Key] = MiRc4.Encrypt(signedNonce, kvp.Value);
+        }
+
+        // 3. 计算外层 signature
+        string signature = MiSigner.GenerateEncSignature(relativePath, "POST", signedNonce, encryptedParams);
+
+        // 4. 补充协议外层参数
+        encryptedParams["signature"] = signature;
+        encryptedParams["_nonce"] = nonce;
+        encryptedParams["ssecurity"] = _tokens.Ssecurity;
 
         using var request = new HttpRequestMessage(HttpMethod.Post, fullUri);
 
         // 设置协议专用 Headers
+        request.Headers.Add("Accept-Encoding", "identity");
         request.Headers.Add("x-xiaomi-protocal-flag-cli", "PROTOCAL-HTTP2");
-        request.Headers.Add("Cookie", $"userId={_tokens.UserId}; serviceToken={_tokens.ServiceToken};");
+        request.Headers.Add("MIOT-ENCRYPT-ALGORITHM", "ENCRYPT-RC4");
+        request.Headers.Add("Cookie", $"userId={_tokens.UserId}; serviceToken={_tokens.ServiceToken}; yetAnotherServiceToken={_tokens.ServiceToken}; locale=zh_CN; timezone=GMT+08:00; is_daylight=0; dst_offset=0; channel=MI_APP_STORE;");
 
-        // 表单内容包含 data 与签名参数
-        var formData = new Dictionary<string, string>
-        {
-            { "data", dataJson },
-            { "_nonce", nonce },
-            { "signature", signature }
-        };
-
-        request.Content = new FormUrlEncodedContent(formData);
+        request.Content = new FormUrlEncodedContent(encryptedParams);
 
         using var response = await _http.SendAsync(request, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
 
-        string json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        var root = JsonNode.Parse(json);
+        string respEncrypted = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+
+        // 使用 signedNonce 解密返回的 RC4 密文
+        string respDecrypted = MiRc4.Decrypt(signedNonce, respEncrypted.Trim());
+
+        var root = JsonNode.Parse(respDecrypted);
         if (root == null)
         {
             throw new InvalidOperationException($"Invalid JSON response from {relativePath}");
