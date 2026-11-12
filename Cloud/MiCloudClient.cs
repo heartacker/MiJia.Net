@@ -97,26 +97,74 @@ public sealed class MiCloudClient : IMiCloudClient
     /// <inheritdoc />
     public async Task<List<HomeInfo>> GetHomesAsync(CancellationToken cancellationToken = default)
     {
-        var reqObj = new GetHomesRequest { Fg = false, FetchShare = true };
-        string dataJson = JsonSerializer.Serialize(reqObj, MiJiaJsonContext.Default.GetHomesRequest);
-
-        var responseNode = await PostAsync("/homeroom/gethome", dataJson, cancellationToken).ConfigureAwait(false);
-        var resultNode = responseNode?["result"];
-        if (resultNode == null) return [];
-
-        var homelist = resultNode["homelist"]?.AsArray();
-        if (homelist == null) return [];
-
         var list = new List<HomeInfo>();
-        foreach (var item in homelist)
+        var seenHomeIds = new HashSet<string>();
+
+        // 1. 优先调用现代聚合接口 /v2/homeroom/gethome_merged，米家云端会直接聚合“自有家庭”与“被分享的家庭”
+        try
         {
-            if (item == null) continue;
-            var home = JsonSerializer.Deserialize(item.ToJsonString(), MiJiaJsonContext.Default.HomeInfo);
-            if (home != null)
+            const string mergedReqJson = "{\"fg\":true,\"fetch_share\":true,\"fetch_share_dev\":true,\"fetch_cariot\":true,\"limit\":300,\"app_ver\":7,\"plat_form\":0}";
+            var responseNode = await PostAsync("/v2/homeroom/gethome_merged", mergedReqJson, cancellationToken).ConfigureAwait(false);
+            var resultNode = responseNode?["result"];
+            var homelist = resultNode?["homelist"]?.AsArray();
+            if (homelist != null && homelist.Count > 0)
             {
-                list.Add(home);
+                foreach (var item in homelist)
+                {
+                    if (item == null) continue;
+                    var home = JsonSerializer.Deserialize(item.ToJsonString(), MiJiaJsonContext.Default.HomeInfo);
+                    if (home != null && !string.IsNullOrEmpty(home.Id) && seenHomeIds.Add(home.Id))
+                    {
+                        list.Add(home);
+                    }
+                }
             }
         }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[MiCloudClient] gethome_merged fallback: {ex.Message}");
+        }
+
+        // 2. 若 gethome_merged 结果为空，降级调用经典接口 /homeroom/gethome，同时合并 homelist 与 share_home_list
+        if (list.Count == 0)
+        {
+            var reqObj = new GetHomesRequest { Fg = false, FetchShare = true };
+            string dataJson = JsonSerializer.Serialize(reqObj, MiJiaJsonContext.Default.GetHomesRequest);
+            var responseNode = await PostAsync("/homeroom/gethome", dataJson, cancellationToken).ConfigureAwait(false);
+            var resultNode = responseNode?["result"];
+            if (resultNode != null)
+            {
+                var homelist = resultNode["homelist"]?.AsArray();
+                if (homelist != null)
+                {
+                    foreach (var item in homelist)
+                    {
+                        if (item == null) continue;
+                        var home = JsonSerializer.Deserialize(item.ToJsonString(), MiJiaJsonContext.Default.HomeInfo);
+                        if (home != null && !string.IsNullOrEmpty(home.Id) && seenHomeIds.Add(home.Id))
+                        {
+                            list.Add(home);
+                        }
+                    }
+                }
+
+                var shareHomeList = resultNode["share_home_list"]?.AsArray();
+                if (shareHomeList != null)
+                {
+                    foreach (var item in shareHomeList)
+                    {
+                        if (item == null) continue;
+                        var home = JsonSerializer.Deserialize(item.ToJsonString(), MiJiaJsonContext.Default.HomeInfo);
+                        if (home != null && !string.IsNullOrEmpty(home.Id) && seenHomeIds.Add(home.Id))
+                        {
+                            if (home.ShareFlag == 0) home.ShareFlag = 1;
+                            list.Add(home);
+                        }
+                    }
+                }
+            }
+        }
+
         return list;
     }
 
@@ -126,32 +174,62 @@ public sealed class MiCloudClient : IMiCloudClient
         bool getHuamiDevices = true,
         CancellationToken cancellationToken = default)
     {
-        var reqObj = new GetDevicesRequest
-        {
-            GetVirtualModel = getVirtualModel,
-            GetHuamiDevices = getHuamiDevices ? 1 : 0,
-            GetSplitDevice = true,
-            SupportAllSpec = true
-        };
-        string dataJson = JsonSerializer.Serialize(reqObj, MiJiaJsonContext.Default.GetDevicesRequest);
-
-        var responseNode = await PostAsync("/home/device_list", dataJson, cancellationToken).ConfigureAwait(false);
-        var resultNode = responseNode?["result"];
-        if (resultNode == null) return [];
-
-        var deviceListArray = resultNode["list"]?.AsArray();
-        if (deviceListArray == null) return [];
-
         var list = new List<DeviceInfo>();
-        foreach (var item in deviceListArray)
+        var seenDids = new HashSet<string>();
+
+        // 1. 优先调用全域设备聚合接口 /v2/home/device_list_page，包含当前账号的全部自有设备与跨家庭共享设备
+        try
         {
-            if (item == null) continue;
-            var dev = JsonSerializer.Deserialize(item.ToJsonString(), MiJiaJsonContext.Default.DeviceInfo);
-            if (dev != null)
+            const string pageReqJson = "{\"ssid\":\"<unknown ssid>\",\"bssid\":\"02:00:00:00:00:00\",\"getVirtualModel\":true,\"getHuamiDevices\":1,\"get_split_device\":true,\"support_smart_home\":true,\"get_cariot_device\":true,\"get_third_device\":true,\"get_phone_device\":true,\"get_miwear_device\":true}";
+            var responseNode = await PostAsync("/v2/home/device_list_page", pageReqJson, cancellationToken).ConfigureAwait(false);
+            var resultNode = responseNode?["result"];
+            var deviceListArray = resultNode?["list"]?.AsArray();
+            if (deviceListArray != null && deviceListArray.Count > 0)
             {
-                list.Add(dev);
+                foreach (var item in deviceListArray)
+                {
+                    if (item == null) continue;
+                    var dev = JsonSerializer.Deserialize(item.ToJsonString(), MiJiaJsonContext.Default.DeviceInfo);
+                    if (dev != null && !string.IsNullOrEmpty(dev.Did) && seenDids.Add(dev.Did))
+                    {
+                        list.Add(dev);
+                    }
+                }
             }
         }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[MiCloudClient] device_list_page fallback: {ex.Message}");
+        }
+
+        // 2. 若 device_list_page 结果为空，降级调用经典 /home/device_list
+        if (list.Count == 0)
+        {
+            var reqObj = new GetDevicesRequest
+            {
+                GetVirtualModel = getVirtualModel,
+                GetHuamiDevices = getHuamiDevices ? 1 : 0,
+                GetSplitDevice = true,
+                SupportAllSpec = true
+            };
+            string dataJson = JsonSerializer.Serialize(reqObj, MiJiaJsonContext.Default.GetDevicesRequest);
+            var responseNode = await PostAsync("/home/device_list", dataJson, cancellationToken).ConfigureAwait(false);
+            var resultNode = responseNode?["result"];
+            var deviceListArray = resultNode?["list"]?.AsArray();
+            if (deviceListArray != null)
+            {
+                foreach (var item in deviceListArray)
+                {
+                    if (item == null) continue;
+                    var dev = JsonSerializer.Deserialize(item.ToJsonString(), MiJiaJsonContext.Default.DeviceInfo);
+                    if (dev != null && !string.IsNullOrEmpty(dev.Did) && seenDids.Add(dev.Did))
+                    {
+                        list.Add(dev);
+                    }
+                }
+            }
+        }
+
         return list;
     }
 
@@ -333,7 +411,7 @@ public sealed class MiCloudClient : IMiCloudClient
     /// <summary>
     /// 底层签名与 HTTP POST 执行（通过 MIOT-ENCRYPT-ALGORITHM: ENCRYPT-RC4 双向加解密通信）
     /// </summary>
-    private async Task<JsonNode?> PostAsync(string relativePath, string dataJson, CancellationToken cancellationToken)
+    public async Task<JsonNode?> PostAsync(string relativePath, string dataJson, CancellationToken cancellationToken = default)
     {
         string fullUri = _serverBaseUrl + relativePath;
         string nonce = MiSigner.GenerateNonce();
